@@ -12,11 +12,11 @@ namespace AquaMai.Mods.GameSystem;
 [ConfigSection(
     zh: """
         将1P耳机音量同步给游戏主音量（外放音量）
-        注意：Maimai处理耳机音量的方式未知，若此功能与八声道同时开启，可能导致耳机音量被缩放两次，推荐在仅使用1P且不开启八声道时使用,
+        注意：若此功能与八声道同时开启，会导致内置耳机声道的音量被缩放两次，推荐在仅使用1P且不开启八声道时使用,
         """,
     en: """
         Sync 1P headphone volume to game master volume
-        Maimai's headphone volume handling is unclear. Enabling with 8ch may double-scale headphone volume. It is recommended to use this only in 1P without 8ch.
+        Note: Enabling with 8ch will double-scale internal headphone volume. Recommended to use this only in 1P without 8ch.
         """)]
 public static class VolumeSync
 {
