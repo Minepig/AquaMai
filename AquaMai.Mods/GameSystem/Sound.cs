@@ -2,6 +2,7 @@ using AquaMai.Config.Attributes;
 using HarmonyLib;
 using Manager;
 using System;
+using System.Collections.Generic;
 using MelonLoader;
 
 namespace AquaMai.Mods.GameSystem;
@@ -105,11 +106,20 @@ public static class Sound
      */
     [HarmonyPrefix]
     [HarmonyPatch(typeof(SoundCtrl), nameof(SoundCtrl.Initialize))]
-    public static void SoundCtrl_Initialize_Prefix(SoundCtrl __instance)
+    public static void SoundCtrl_Initialize_Prefix(SoundCtrl __instance, SoundCtrl.InitParam param)
     {
         __instance._masterVolume = 0.05f; // Default headphone volume
         // MelonLogger.Msg("master volume initialized to 0.05");
+        
+        // Initialization
+        _playerVolumes = new float[param.PlayerNum];
+        for (var i = 0; i < param.PlayerNum; i++)
+        {
+            _playerVolumes[i] = 1f;
+        }
     }
+
+    private static float[] _playerVolumes;
     
     [HarmonyPostfix]
     [HarmonyPatch(typeof(SoundCtrl), nameof(SoundCtrl.SetMasterVolume))]
@@ -132,20 +142,77 @@ public static class Sound
     public static void SoundCtrl_SetHeadPhoneVolume_Postfix(SoundCtrl __instance, int targerID, float volume)
     {
         // MelonLogger.Msg($"setting headphone volume : target {targerID}, volume {volume}");
-        if (targerID == 0)
+        if (targerID != 0) return;
+        
+        __instance._masterVolume = __instance.Adjust0_1(volume);
+        // MelonLogger.Msg($"master volume set to {__instance._masterVolume}");
+
+        MelonLogger.Msg("Syncing volume");
+        var dictTraverse = Traverse.Create(__instance).Field<Dictionary<int, object>>("_players");
+        MelonLogger.Msg("_players get: " + dictTraverse.ToString());
+        foreach (var pair in dictTraverse.Value)
         {
-            __instance._masterVolume = __instance.Adjust0_1(volume);
-            // MelonLogger.Msg($"master volume set to {__instance._masterVolume}");
-            // fixme)) 由于每个播放通道的master音量只在切换音频文件时重设，目前调节耳机音量不能及时反映到master
-            // 需要在这里加一段调整所有通道音量的代码，但这样就需要记录开始播放时的volume参数
+            var player = pair.Value; // SoundCtrl.PlayerObj
+            var key = pair.Key;
+            var newVolume = __instance.Adjust0_1(__instance._masterVolume * _playerVolumes[key]);
+            
+            var trav = Traverse.Create(player);
+            MelonLogger.Msg($"player #{key} get: {trav.ToString()}");
+            if (!trav.Method("IsReady").GetValue<bool>()) continue;
+
+            MelonLogger.Msg($"#{key} checking target");
+            switch (trav.Field<int>("TargetID").Value)
+            {
+                case 0:
+                    MelonLogger.Msg("case 0");
+                    trav.Method("SetAisac").GetValue(4, newVolume);
+                    break;
+                case 1:
+                    MelonLogger.Msg("case 1");
+                    trav.Method("SetAisac").GetValue(5, newVolume);
+                    break;
+                case 2:
+                    MelonLogger.Msg("case 2");
+                    trav.Method("SetAisac").GetValue(4, newVolume);
+                    trav.Method("SetAisac").GetValue(5, newVolume);
+                    break;
+            }
+            MelonLogger.Msg($"#{key} SetAisac finished");
+            trav.Field<bool>("NeedUpdate").Value = true;
+            MelonLogger.Msg($"player #{key} synced");
         }
+        
+        // The code above is supposed to do following things,
+        // but SoundCtrl.PlayerObj is private so we need this shit
+        // ================================================================================
+        // foreach (KeyValuePair<int, SoundCtrl.PlayerObj> player in this._players)
+        // {
+        //     if (player.Value.IsReady())
+        //     {
+        //         switch (player.Value.TargetID)
+        //         {
+        //             case 0:
+        //                 player.Value.SetAisac(4, volume);
+        //                 break;
+        //             case 1:
+        //                 player.Value.SetAisac(5, volume);
+        //                 break;
+        //             case 2:
+        //                 player.Value.SetAisac(4, volume);
+        //                 player.Value.SetAisac(5, volume);
+        //                 break;
+        //         }
+        //         player.Value.NeedUpdate = true;
+        //     }
+        // }
+        // ================================================================================
     }
     
     [HarmonyPrefix]
     [HarmonyPatch(typeof(SoundCtrl), nameof(SoundCtrl.Play))]
     public static void SoundCtrl_Play_Prefix(SoundCtrl __instance, SoundCtrl.PlaySetting setting)
     {
-        // fixme)) 在这里记录每个文件开始播放时的volume参数
+        _playerVolumes[setting.PlayerID] = (setting.Volume < 0f) ? 1.0f : setting.Volume;
         if (setting.PlayerID != 3 && setting.PlayerID != 4 && setting.PlayerID != 5)
         {
             return;
